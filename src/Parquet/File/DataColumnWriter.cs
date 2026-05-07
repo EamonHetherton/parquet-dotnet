@@ -71,11 +71,11 @@ namespace Parquet.File {
             PageHeader ph, MemoryStream data,
             ColumnSizes cs,
             CancellationToken cancellationToken) {
-            
+
             using IronCompress.IronCompressResult compressedData = _compressionMethod == CompressionMethod.None
                 ? new IronCompress.IronCompressResult(data.ToArray(), Codec.Snappy, false)
                 : Compressor.Compress(_compressionMethod, data.ToArray(), _compressionLevel);
-            
+
             ph.UncompressedPageSize = (int)data.Length;
             ph.CompressedPageSize = compressedData.AsSpan().Length;
 
@@ -125,7 +125,6 @@ namespace Parquet.File {
 
                 await CompressAndWriteAsync(ph, ms, r, cancellationToken);
             }
-
             // data page
             using(MemoryStream ms = _rmsMgr.GetStream()) {
                 bool deltaEncode = column.IsDeltaEncodable && _options.UseDeltaBinaryPackedEncoding;
@@ -149,6 +148,13 @@ namespace Parquet.File {
                     if(deltaEncode) {
                         DeltaBinaryPackedEncoder.Encode(data, offset, count, ms, column.Statistics);
                         chunk.MetaData!.Encodings[2] = Encoding.DELTA_BINARY_PACKED;
+                        //TODO: implement RLE encoding for bools, encoding works with the below code...decoding doesn't yet
+                        //} else if(data.GetType() == typeof(bool[])) {
+                        //    RleBitpackedHybridEncoder.Encode(ms, (bool[])data);
+                        //    if(ph.DataPageHeader is not null)
+                        //        ph.DataPageHeader!.Encoding = Encoding.RLE;
+                        //    if(ph.DataPageHeaderV2 is not null)
+                        //        ph.DataPageHeaderV2!.Encoding = Encoding.RLE;
                     } else {
                         ParquetPlainEncoder.Encode(data, offset, count, tse, ms, pc.HasDictionary ? null : column.Statistics);
                     }

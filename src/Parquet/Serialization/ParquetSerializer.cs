@@ -6,6 +6,7 @@ using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
+using Apache.Arrow;
 using Parquet.Data;
 using Parquet.Extensions;
 using Parquet.Schema;
@@ -120,6 +121,40 @@ namespace Parquet.Serialization {
 
             return striper.Schema;
         }
+#pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
+        public static async Task<ParquetSchema> SerializeAsync<T>(ParquetSchema schema, IEnumerable<T> objectInstances, Stream destination,
+#pragma warning restore CS1591 // Missing XML comment for publicly visible type or member
+            ParquetSerializerOptions? options = null,
+            CancellationToken cancellationToken = default) {
+
+            object boxedStriper = _typeToStriper.GetOrAdd(typeof(T), _ => new Striper<T>(schema));
+            var striper = (Striper<T>)boxedStriper;
+
+            bool append = options != null && options.Append;
+            using(ParquetWriter writer = await ParquetWriter.CreateAsync(striper.Schema, destination,
+                options?.ParquetOptions,
+                append, cancellationToken)) {
+
+                if(options != null) {
+                    writer.CompressionMethod = options.CompressionMethod;
+                    writer.CompressionLevel = options.CompressionLevel;
+                }
+
+                if(options?.RowGroupSize != null) {
+                    int rgs = options.RowGroupSize.Value;
+                    if(rgs < 1)
+                        throw new InvalidOperationException($"row group size must be a positive number, but passed {rgs}");
+                    foreach(T[] chunk in objectInstances.Chunk(rgs)) {
+                        await SerializeRowGroupAsync<T>(writer, striper, chunk, cancellationToken);
+                    }
+                } else {
+                    await SerializeRowGroupAsync<T>(writer, striper, objectInstances, cancellationToken);
+                }
+            }
+
+            return striper.Schema;
+        }
+
 
         /// <summary>
         /// Experimental object serialisation
